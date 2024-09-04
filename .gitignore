@@ -1,0 +1,6 @@
+.idea/
+*.xlsx
+*.json
+output/
+venv
+config.py
