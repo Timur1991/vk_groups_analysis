@@ -11,6 +11,7 @@ import datetime
 ведь чем больше активной аудитории, тем выше будет охват рекламы в данной группе.
 
 По всем возникшим вопросам, можете писать в группу https://vk.com/happython
+Подробное описание парсера: https://happypython.ru/2022/09/08/vk-analyzer/
 """
 
 
@@ -19,7 +20,7 @@ def get_offset(group_id):
     params = {'access_token': token, 'group_id': group_id, 'v': 5.131}
     r = requests.get('https://api.vk.com/method/groups.getMembers', params=params)
     count = r.json()['response']['count']
-    print(f'Количество подписчиков: {count}')
+    # print(f'Количество подписчиков: {count}')
     if count > 1000:
         return count // 1000
     else:
@@ -44,25 +45,30 @@ def save_excel(data: list, filename: str):
     print(f'Все сохранено в {filename}.xlsx\n')
 
 
-def get_users(group_id, from_data):
-    """Получаем всех участников группы и фильтруем от неактивных"""
-    active_list = []
-    users_can_closed_visit = []
-    un_active_list = []
-    data_list = []
-    for offset in range(0, get_offset(group_id)+1):
+def get_users(group_id: str, from_data: str) -> list:
+    """Получаем данные о всех пользователях в группе и сортируем их по спискам"""
+    active_list = []  # активные пользователи
+    active_list_by_time = []  # активные пользователи за отведенное время
+    un_active_list = []  # неактивные пользователи
+    banned_list = []  # удаленные и забаненные пользователи
+    data_list = []  # лист для сохранения данных о пользователях
+    total_users = ''
+    for offset in range(0, get_offset(group_id) + 1):
         params = {'access_token': token,
                   'v': 5.131,
                   'group_id': group_id,
-                  'offset': offset*1000,
+                  'offset': offset * 1000,
                   'fields': 'last_seen, city, bdate, sex'}
-        users = requests.get('https://api.vk.com/method/groups.getMembers', params=params).json()['response']
-        for user in users['items']:
+        users = requests.get('https://api.vk.com/method/groups.getMembers', params=params).json()
+        for user in users['response']['items']:
+            total_users = users['response']['count']
             user_id = user.get('id')
             if user.get('deactivated'):
                 activity = user.get('deactivated')
+                banned_list.append(user_id)
             else:
                 activity = 'active'
+                active_list.append(user_id)
             try:
                 last_seen = datetime.datetime.utcfromtimestamp(user.get('last_seen').get('time')).strftime('%d.%m.%Y')
             except AttributeError:
@@ -98,36 +104,36 @@ def get_users(group_id, from_data):
             start_point_data = datetime.datetime.strptime(from_data, '%d.%m.%Y').timestamp()
             try:
                 if user['last_seen']['time'] >= start_point_data:
-                    active_list.append(user['id'])
+                    active_list_by_time.append(user['id'])
                 else:
                     un_active_list.append(user['id'])
-            except:
-                users_can_closed_visit.append(user['id'])
-    print(f"Активных подписчиков:   {len(active_list)} ({round((len(active_list)-len(un_active_list))/ (users['count']) * 100, 2)}%)")
-    print(f'Не активные за отведенное время: {len(un_active_list)}\nЗабаненные/Удаленные: {len(users_can_closed_visit)}\n')
+            except:  # если дата посещения скрыта (раньше можно было скрыть, сейчас такой функции нет)
+                un_active_list.append(user['id'])
+    print(f"Количество подписчиков всего:   {total_users}")
+    print(f"Активных подписчиков:           {len(active_list)} ({round(len(active_list) / total_users * 100, 2)}%)")
+    print(f"Уделенных/забаненных:           {len(banned_list)} ({round(len(banned_list) / total_users * 100, 2)}%)")
+    print(f'Активные за отведенное время:   {len(active_list_by_time)} ({round(len(active_list_by_time) / total_users * 100, 2)}%)')
+    print(f'Неактивные за отведенное время: {len(un_active_list)} ({round(len(un_active_list) / total_users * 100, 2)}%)\n')
     return data_list
 
 
 def parser(group_list):
     from_data = input('Введите дату, с которой хотите отслеживать активность\nв формате: дд.мм.гггг: ')
-    # from_data = '20.08.2022'
-    # all_active_users = []
     print(f'Анализируем с {from_data}\n')
     for group in group_list:
         print(f'Группа: {group}')
-        # try:
-        users = get_users(group_id=group, from_data=from_data)
-        # all_active_users.extend(users)
-        save_excel(users, filename=f"users_of_{group}")
-        # time.sleep(2)
-        # except Exception as ex:
-        #     print(f'{group} - не предвиденная ошибка: {ex}\n')
-        #     continue
+        try:
+            users = get_users(group_id=group, from_data=from_data)
+            save_excel(users, filename=f"users_of_{group}")
+        except Exception as ex:
+            print(f'{group} - не предвиденная ошибка: {ex}\n')
+            continue
 
 
 if __name__ == '__main__':
     # вносим в список интересующие вас группы
     # group_list = ['happython', 'python_forum', 'vk_python', 'pirsipy']
-    # group_list = ['happython']
-    group_list = ['parsers_wildberries']
+    group_list = ['happython']
+    # group_list = ['parsers_wildberries']
     parser(group_list)
+
